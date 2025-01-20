@@ -1,0 +1,12 @@
+{
+  "name": "pharmaclear",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "react-scripts": "5.0.1"
+  }
+}
