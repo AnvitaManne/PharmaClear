@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
+import ReportButton from "./ReportButton";
 
 const AlertCard = ({ alert }) => (
   <div className="p-6 border rounded-lg mb-4 hover:shadow-md transition-shadow">
@@ -169,10 +170,14 @@ const LandingPage = () => {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 py-6">
-        {/* Results Count */}
+        {/* Results Count and Report Button */}
         {totalResults > 0 && (
-          <div className="mb-4 text-gray-600">
-            Found {totalResults} results for "{searchQuery}"
+          <div className="flex justify-between items-center mb-4">
+            <div className="text-gray-600">
+              Found {totalResults} results for "{searchQuery}"
+            </div>
+            <ReportButton searchQuery={searchQuery} alerts={alerts} />
+              
           </div>
         )}
 
