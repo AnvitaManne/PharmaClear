@@ -36,3 +36,53 @@ def create_user_search(db: Session, search: schemas.SearchCreate, user_id: int):
     db.commit()
     db.refresh(db_search)
     return db_search
+
+def get_watchlist_items_by_user(db: Session, user_id: int):
+    return db.query(models.WatchlistItem).filter(models.WatchlistItem.owner_id == user_id).all()
+
+def create_watchlist_item(db: Session, item: schemas.WatchlistItemCreate, user_id: int):
+    # Optional: Check for duplicates before adding
+    db_item = db.query(models.WatchlistItem).filter(
+        models.WatchlistItem.owner_id == user_id,
+        models.WatchlistItem.query_text == item.query_text
+    ).first()
+    if db_item:
+        return db_item # Return existing item if it's already on the watchlist
+
+    db_item = models.WatchlistItem(**item.model_dump(), owner_id=user_id)
+    db.add(db_item)
+    db.commit()
+    db.refresh(db_item)
+    return db_item
+
+def delete_watchlist_item(db: Session, item_id: int, user_id: int):
+    db_item = db.query(models.WatchlistItem).filter(
+        models.WatchlistItem.id == item_id,
+        models.WatchlistItem.owner_id == user_id
+    ).first()
+    if db_item:
+        db.delete(db_item)
+        db.commit()
+        return db_item
+    return None
+
+def create_notification(db: Session, user_id: int, message: str):
+    """Creates a new notification for a user."""
+    db_notification = models.Notification(owner_id=user_id, message=message)
+    db.add(db_notification)
+    db.commit()
+    db.refresh(db_notification)
+    return db_notification
+
+def get_notifications_by_user(db: Session, user_id: int):
+    """Gets all notifications for a user, newest first."""
+    return db.query(models.Notification).filter(models.Notification.owner_id == user_id).order_by(models.Notification.created_at.desc()).all()
+
+def mark_notifications_as_read(db: Session, user_id: int):
+    """Marks all unread notifications for a user as read."""
+    db.query(models.Notification).filter(
+        models.Notification.owner_id == user_id,
+        models.Notification.is_read == False
+    ).update({"is_read": True})
+    db.commit()
+    return {"status": "success", "message": "All notifications marked as read."}

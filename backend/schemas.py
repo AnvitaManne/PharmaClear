@@ -3,26 +3,66 @@
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
-# --- User Schemas ---
 
-# Base attributes for a user
+# --- Base Schemas ---
+# Used for creating new items.
 class UserBase(BaseModel):
     email: str
 
-# Attributes required when creating a new user (receives from API)
 class UserCreate(UserBase):
     password: str
 
-# Attributes to return when fetching a user (sends back via API)
-class User(UserBase):
+class SearchBase(BaseModel):
+    query_text: str
+
+class SearchCreate(SearchBase):
+    pass
+
+class WatchlistItemBase(BaseModel):
+    query_text: str
+
+class WatchlistItemCreate(WatchlistItemBase):
+    pass
+
+class NotificationBase(BaseModel):
+    message: str
+    is_read: bool
+
+# --- Full Schemas (for API responses) ---
+# These represent the full objects and are defined before the User schema that uses them.
+
+class Search(SearchBase):
     id: int
     created_at: datetime
-
-    # This tells Pydantic to read the data even if it's not a dict,
-    # but an ORM model (like our SQLAlchemy User model)
+    owner_id: int
     class Config:
         from_attributes = True
 
+class WatchlistItem(WatchlistItemBase):
+    id: int
+    created_at: datetime
+    owner_id: int
+    class Config:
+        from_attributes = True
+
+class Notification(NotificationBase):
+    id: int
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+# --- Consolidated User Schema ---
+# Now defined last, so it can correctly reference Search, WatchlistItem, and Notification.
+class User(UserBase):
+    id: int
+    created_at: datetime
+    searches: list[Search] = []
+    watchlist_items: list[WatchlistItem] = []
+    notifications: list[Notification] = []
+    class Config:
+        from_attributes = True
+
+# --- Other Schemas (Token, Report, Chat) ---
 
 class Token(BaseModel):
     access_token: str
@@ -31,25 +71,18 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     email: Optional[str] = None
 
-class SearchBase(BaseModel):
-    query_text: str
+class AlertItem(BaseModel):
+    date: str
+    severity: str
+    description: str
 
-class SearchCreate(SearchBase):
-    pass
+class ReportRequest(BaseModel):
+    query: str
+    alerts: list[AlertItem]
 
-class Search(SearchBase):
-    id: int
-    created_at: datetime
-    owner_id: int
+class ChatRequest(BaseModel):
+    question: str
+    context_alerts: list[AlertItem]
 
-    class Config:
-        from_attributes = True
-
-# We also need to update our User schema to include the searches
-class User(UserBase):
-    id: int
-    created_at: datetime
-    searches: list[Search] = [] # <-- ADD THIS LINE
-
-    class Config:
-        from_attributes = True
+class ChatResponse(BaseModel):
+    answer: str

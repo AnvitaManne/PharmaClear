@@ -13,6 +13,18 @@ from sqlalchemy import text
 
 # Import our modules, including the 'get_db' function from database.py
 from . import config, database, models, schemas, crud, auth
+from fastapi.responses import StreamingResponse
+from io import BytesIO
+import google.generativeai as genai
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet
+from groq import Groq
+# backend/main.py (add to imports)
+from apscheduler.schedulers.background import BackgroundScheduler
+from . import alerter
+
 
 # This line creates the 'users' table in your database if it doesn't exist
 models.Base.metadata.create_all(bind=database.engine)
@@ -93,6 +105,63 @@ def read_user_searches(
     searches = crud.get_searches_by_user(db, user_id=current_user.id, skip=skip, limit=limit)
     return searches
 
+@app.get("/api/watchlist/", response_model=list[schemas.WatchlistItem])
+def read_watchlist(
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """
+    Retrieves the watchlist for the currently logged-in user.
+    """
+    return crud.get_watchlist_items_by_user(db=db, user_id=current_user.id)
+
+
+@app.post("/api/watchlist/", response_model=schemas.WatchlistItem)
+def add_to_watchlist(
+    item: schemas.WatchlistItemCreate,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """
+    Adds a new item to the user's watchlist.
+    """
+    return crud.create_watchlist_item(db=db, item=item, user_id=current_user.id)
+@app.get("/api/notifications/", response_model=list[schemas.Notification])
+def read_notifications(
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """
+    Retrieves all notifications for the currently logged-in user.
+    """
+    return crud.get_notifications_by_user(db=db, user_id=current_user.id)
+
+
+@app.post("/api/notifications/read")
+def mark_all_as_read(
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """
+    Marks all of the user's unread notifications as read.
+    """
+    return crud.mark_notifications_as_read(db=db, user_id=current_user.id)
+
+
+@app.delete("/api/watchlist/{item_id}", response_model=schemas.WatchlistItem)
+def remove_from_watchlist(
+    item_id: int,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """
+    Deletes an item from the user's watchlist.
+    """
+    deleted_item = crud.delete_watchlist_item(db=db, item_id=item_id, user_id=current_user.id)
+    if deleted_item is None:
+        raise HTTPException(status_code=404, detail="Watchlist item not found")
+    return deleted_item
+
 @app.get("/api/health")
 def health_check(db: Session = Depends(database.get_db)): # <-- TYPO FIXED HERE
     """
@@ -112,33 +181,195 @@ async def search_drugs(
     """
     Searches the openFDA API for drug enforcement reports.
     """
-    # ... (rest of the function is correct and remains unchanged) ...
     if not q:
         return {"results": [], "total": 0}
+
     start_str, end_str = get_date_range()
+
     async with httpx.AsyncClient() as client:
         try:
             api_url = f"https://api.fda.gov/drug/enforcement.json?search=report_date:[{start_str}+TO+{end_str}]+AND+(product_description:{q}+OR+reason_for_recall:{q})&limit=100"
+
             response = await client.get(api_url)
             response.raise_for_status()
             data = response.json()
+
             results = []
             for recall in data.get('results', []):
+                event_id = recall.get('event_id')
+                recall_number = recall.get('recall_number')
+                source_url = f"https://www.accessdata.fda.gov/scripts/ires/index.cfm?Event_ID_Search={event_id}" if event_id else None
+
                 alert = {
                     'title': recall.get('product_description', 'No Title').split('.')[0],
                     'description': recall.get('reason_for_recall', 'No Description'),
                     'date': recall.get('recall_initiation_date', ''),
                     'source': 'FDA',
                     'severity': get_severity(recall.get('classification', '')),
-                    'components': recall.get('openfda', {}).get('substance_name', []),
-                    'source_url': 'https://www.fda.gov/safety/recalls-market-withdrawals-safety-alerts'
+                    'source_url': source_url,
+                    # --- ADDING DEBUG INFO ---
+                    'recall_number': recall_number,
+                    'event_id': event_id
                 }
                 results.append(alert)
+
             return {"results": results, "total": len(results)}
+
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=f"Error from FDA API: {e.response.text}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
+
+# Configure Google AI client
+groq_client = Groq(api_key=config.GROQ_API_KEY)
+
+def generate_summary_with_groq(query: str, alerts: list[schemas.AlertItem]):
+    alert_details = "\n".join([
+        f"- Date: {a.date}, Severity: {a.severity.upper()}, Description: {a.description[:200]}..."
+        for a in alerts
+    ])
+
+    prompt = f"""
+    As a pharmaceutical compliance analyst, provide a concise, professional executive summary
+    for a report on the component "{query}". The key findings from FDA enforcement reports are listed below.
+    Highlight critical patterns, high-severity recalls, and the overall risk profile based on this data.
+
+    Key Findings:
+    {alert_details}
+
+    Executive Summary (2-3 paragraphs):
+    """
+
+    try:
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            # Llama3 8b is extremely fast and great for summarization
+            model="llama-3.1-8b-instant", 
+        )
+        return chat_completion.choices[0].message.content
+    except Exception as e:
+        print(f"Groq API error: {e}")
+        return "Summary could not be generated due to an API error."
+
+
+@app.post("/api/report")
+def generate_report(
+    report_data: schemas.ReportRequest,
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    query = report_data.query
+    alerts = report_data.alerts
+
+    summary = generate_summary_with_groq(query, alerts)
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    story = []
+
+    # Title and metadata
+    story.append(Paragraph(f"Compliance Report: {query}", styles['h1']))
+    story.append(Spacer(1, 12))
+    story.append(Paragraph(f"Generated for: {current_user.email}", styles['Normal']))
+    story.append(Paragraph(f"Date: {datetime.now().strftime('%Y-%m-%d')}", styles['Normal']))
+    story.append(Spacer(1, 24))
+
+    # AI-generated Executive Summary
+    story.append(Paragraph("Executive Summary", styles['h2']))
+    story.append(Paragraph(summary, styles['BodyText']))
+    story.append(Spacer(1, 24))
+
+    # Detailed Alerts Table
+    story.append(Paragraph("Detailed Alerts", styles['h2']))
+    table_data = [['Date', 'Severity', 'Description']]
+    for alert in alerts:
+        # Wrap long descriptions in a Paragraph for proper table cell rendering
+        table_data.append([
+            alert.date,
+            alert.severity.upper(),
+            Paragraph(alert.description, styles['BodyText'])
+        ])
+
+    # Define table with column widths
+    table = Table(table_data, colWidths=[70, 70, 340])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    story.append(table)
+
+    doc.build(story)
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type='application/pdf',
+        headers={'Content-Disposition': f'attachment; filename="{query}-report.pdf"'}
+    )
+
+# backend/main.py (add this endpoint)
+
+@app.post("/api/chat", response_model=schemas.ChatResponse)
+def chat_with_results(
+    chat_request: schemas.ChatRequest,
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """
+    Answers a user's question based on the context of their search results (RAG).
+    """
+    question = chat_request.question
+    alerts = chat_request.context_alerts
+
+    # RAG Step 1: Format the retrieved context
+    context = "\n\n".join([
+        f"Document Title: {a.description[:80]}...\nContent: {a.description}"
+        for a in alerts
+    ])
+
+    # RAG Step 2: Augment the prompt with the context
+    prompt = f"""
+    You are a helpful pharmaceutical compliance assistant.
+    Based ONLY on the context documents provided below, answer the user's question.
+    If the answer is not found in the context, say "I cannot answer that based on the provided results."
+
+    CONTEXT DOCUMENTS:
+    ---
+    {context}
+    ---
+
+    USER'S QUESTION:
+    {question}
+
+    ANSWER:
+    """
+
+    try:
+        chat_completion = groq_client.chat.completions.create(
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            model="llama-3.1-8b-instant",
+        )
+        answer = chat_completion.choices[0].message.content
+        return schemas.ChatResponse(answer=answer)
+    except Exception as e:
+        print(f"Groq RAG error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get an answer from the AI.")
+    
 
 # --- Helper Functions ---
 def get_date_range():
@@ -148,12 +379,16 @@ def get_date_range():
     end_str = end_date.strftime('%Y%m%d')
     return start_str, end_str
 
-def get_severity(reason: str = '') -> str:
-    if not reason:
+def get_severity(classification: str = '') -> str:
+    if not classification:
         return 'low'
-    reason = reason.lower()
-    if 'class i' in reason or 'serious' in reason:
+    if classification=="Class I":
         return 'high'
-    elif 'class ii' in reason or 'temporary' in reason:
+    elif classification=="Class II":
         return 'medium'
     return 'low'
+print("--- SCHEDULER: Initializing and starting background alerter... ---") 
+scheduler = BackgroundScheduler()
+# For testing, run every 30 seconds. For production, you'd use 'hours=24' or similar.
+scheduler.add_job(alerter.check_for_new_reports, 'interval',hours=24)
+scheduler.start()

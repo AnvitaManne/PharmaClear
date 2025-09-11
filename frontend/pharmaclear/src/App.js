@@ -10,7 +10,9 @@ import LandingPage from "./LandingPage";
 import LoginPage from "./LoginPage";
 import SignUpPage from "./SignUpPage";
 import DashboardPage from "./DashboardPage";
-import ProtectedRoute from "./ProtectedRoute"; // <-- Import ProtectedRoute
+import ProtectedRoute from "./ProtectedRoute";
+import NotificationBell from "./NotificationBell";
+// <-- Import ProtectedRoute
 import { useAuth } from "./AuthContext"; // <-- Import useAuth
 
 // A small component for the Log Out button to handle navigation
@@ -43,7 +45,7 @@ function App() {
           <nav className="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
             <Link to="/" className="flex items-center">
               <img
-                src="/your-logo.png"
+                src="/images/your-logo.png"
                 alt="PharmaClear Logo"
                 className="h-8 w-8 mr-2"
               />
@@ -62,6 +64,7 @@ function App() {
                     Dashboard
                   </Link>
                   <LogoutButton />
+                  <NotificationBell />
                 </>
               ) : (
                 // Show these links if the user IS NOT logged in
