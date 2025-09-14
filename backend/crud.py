@@ -1,4 +1,3 @@
-# backend/crud.py
 from sqlalchemy.orm import Session
 from . import models, schemas, security
 
@@ -14,8 +13,6 @@ def create_user(db: Session, user: schemas.UserCreate):
     return db_user
 
 
-
-
 def authenticate_user(db: Session, email: str, password: str):
     user = get_user_by_email(db, email=email)
     if not user:
@@ -24,8 +21,6 @@ def authenticate_user(db: Session, email: str, password: str):
         return False
     return user
 
-# backend/crud.py
-# ... (existing functions) ...
 
 def get_searches_by_user(db: Session, user_id: int, skip: int = 0, limit: int = 100):
     return db.query(models.Search).filter(models.Search.owner_id == user_id).offset(skip).limit(limit).all()
@@ -41,13 +36,12 @@ def get_watchlist_items_by_user(db: Session, user_id: int):
     return db.query(models.WatchlistItem).filter(models.WatchlistItem.owner_id == user_id).all()
 
 def create_watchlist_item(db: Session, item: schemas.WatchlistItemCreate, user_id: int):
-    # Optional: Check for duplicates before adding
     db_item = db.query(models.WatchlistItem).filter(
         models.WatchlistItem.owner_id == user_id,
         models.WatchlistItem.query_text == item.query_text
     ).first()
     if db_item:
-        return db_item # Return existing item if it's already on the watchlist
+        return db_item 
 
     db_item = models.WatchlistItem(**item.model_dump(), owner_id=user_id)
     db.add(db_item)

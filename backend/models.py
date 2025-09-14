@@ -1,6 +1,3 @@
-# backend/models.py
-
-# Add 'Boolean' to this import list
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func

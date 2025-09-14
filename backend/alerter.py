@@ -1,4 +1,3 @@
-# backend/alerter.py
 from sqlalchemy.orm import Session
 import httpx
 from datetime import datetime, timedelta
@@ -23,9 +22,7 @@ def check_for_new_reports():
         if not users_with_watchlist:
             return
 
-        # For testing, we'll keep looking back 30 days to ensure we find results.
-        # For production, this would be set to 1.
-        report_date = get_past_date_str(days=30)
+        report_date = get_past_date_str(days=1)
 
         for user in users_with_watchlist:
             for item in user.watchlist_items:
@@ -37,7 +34,7 @@ def check_for_new_reports():
                     if response.status_code == 200:
                         data = response.json()
                         if 'results' in data and data['results']:
-                            # --- CREATE IN-APP NOTIFICATION INSTEAD OF EMAIL ---
+                          
                             message = f"New FDA report found for '{query}' on your watchlist."
                             crud.create_notification(db=db, user_id=user.id, message=message)
                             print(f"!!! ALERT !!! Created notification for user {user.email} for query '{query}'.")

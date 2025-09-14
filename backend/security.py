@@ -1,7 +1,5 @@
-# backend/security.py
 from passlib.context import CryptContext
 
-# Use bcrypt for hashing, which is a standard and secure choice
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def verify_password(plain_password, hashed_password):

@@ -1,5 +1,3 @@
-# backend/main.py
-
 import os
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -11,7 +9,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
-# Import our modules, including the 'get_db' function from database.py
+
 from . import config, database, models, schemas, crud, auth
 from fastapi.responses import StreamingResponse
 from io import BytesIO
@@ -21,12 +19,11 @@ from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet
 from groq import Groq
-# backend/main.py (add to imports)
 from apscheduler.schedulers.background import BackgroundScheduler
 from . import alerter
 
 
-# This line creates the 'users' table in your database if it doesn't exist
+
 models.Base.metadata.create_all(bind=database.engine)
 
 app = FastAPI(
@@ -42,10 +39,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# --- The get_db function is now imported from database.py ---
-# We no longer define it here.
-
 
 # --- API Endpoints ---
 
@@ -77,8 +70,6 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
-# backend/main.py
-# ... (after the /api/token endpoint) ...
 
 @app.post("/api/searches/", response_model=schemas.Search)
 def create_search_for_user(
@@ -95,7 +86,7 @@ def create_search_for_user(
 @app.get("/api/searches/", response_model=list[schemas.Search])
 def read_user_searches(
     skip: int = 0,
-    limit: int = 100,
+    limit: int = 50,
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user)
 ):
@@ -126,6 +117,7 @@ def add_to_watchlist(
     Adds a new item to the user's watchlist.
     """
     return crud.create_watchlist_item(db=db, item=item, user_id=current_user.id)
+
 @app.get("/api/notifications/", response_model=list[schemas.Notification])
 def read_notifications(
     db: Session = Depends(database.get_db),
@@ -220,7 +212,6 @@ async def search_drugs(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"An internal server error occurred: {str(e)}")
 
-# Configure Google AI client
 groq_client = Groq(api_key=config.GROQ_API_KEY)
 
 def generate_summary_with_groq(query: str, alerts: list[schemas.AlertItem]):
@@ -248,7 +239,6 @@ def generate_summary_with_groq(query: str, alerts: list[schemas.AlertItem]):
                     "content": prompt,
                 }
             ],
-            # Llama3 8b is extremely fast and great for summarization
             model="llama-3.1-8b-instant", 
         )
         return chat_completion.choices[0].message.content
@@ -272,30 +262,28 @@ def generate_report(
     styles = getSampleStyleSheet()
     story = []
 
-    # Title and metadata
+   
     story.append(Paragraph(f"Compliance Report: {query}", styles['h1']))
     story.append(Spacer(1, 12))
     story.append(Paragraph(f"Generated for: {current_user.email}", styles['Normal']))
     story.append(Paragraph(f"Date: {datetime.now().strftime('%Y-%m-%d')}", styles['Normal']))
     story.append(Spacer(1, 24))
 
-    # AI-generated Executive Summary
+
     story.append(Paragraph("Executive Summary", styles['h2']))
     story.append(Paragraph(summary, styles['BodyText']))
     story.append(Spacer(1, 24))
 
-    # Detailed Alerts Table
+    
     story.append(Paragraph("Detailed Alerts", styles['h2']))
     table_data = [['Date', 'Severity', 'Description']]
     for alert in alerts:
-        # Wrap long descriptions in a Paragraph for proper table cell rendering
         table_data.append([
             alert.date,
             alert.severity.upper(),
             Paragraph(alert.description, styles['BodyText'])
         ])
 
-    # Define table with column widths
     table = Table(table_data, colWidths=[70, 70, 340])
     table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
@@ -318,7 +306,7 @@ def generate_report(
         headers={'Content-Disposition': f'attachment; filename="{query}-report.pdf"'}
     )
 
-# backend/main.py (add this endpoint)
+
 
 @app.post("/api/chat", response_model=schemas.ChatResponse)
 def chat_with_results(
@@ -331,13 +319,11 @@ def chat_with_results(
     question = chat_request.question
     alerts = chat_request.context_alerts
 
-    # RAG Step 1: Format the retrieved context
     context = "\n\n".join([
         f"Document Title: {a.description[:80]}...\nContent: {a.description}"
         for a in alerts
     ])
 
-    # RAG Step 2: Augment the prompt with the context
     prompt = f"""
     You are a helpful pharmaceutical compliance assistant.
     Based ONLY on the context documents provided below, answer the user's question.
@@ -371,7 +357,6 @@ def chat_with_results(
         raise HTTPException(status_code=500, detail="Failed to get an answer from the AI.")
     
 
-# --- Helper Functions ---
 def get_date_range():
     end_date = datetime.now()
     start_date = end_date - timedelta(days=180)
@@ -389,6 +374,5 @@ def get_severity(classification: str = '') -> str:
     return 'low'
 print("--- SCHEDULER: Initializing and starting background alerter... ---") 
 scheduler = BackgroundScheduler()
-# For testing, run every 30 seconds. For production, you'd use 'hours=24' or similar.
 scheduler.add_job(alerter.check_for_new_reports, 'interval',hours=24)
 scheduler.start()

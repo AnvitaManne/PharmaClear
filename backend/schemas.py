@@ -1,11 +1,7 @@
-# backend/schemas.py
-
 from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional
 
-# --- Base Schemas ---
-# Used for creating new items.
 class UserBase(BaseModel):
     email: str
 
@@ -28,9 +24,6 @@ class NotificationBase(BaseModel):
     message: str
     is_read: bool
 
-# --- Full Schemas (for API responses) ---
-# These represent the full objects and are defined before the User schema that uses them.
-
 class Search(SearchBase):
     id: int
     created_at: datetime
@@ -51,8 +44,6 @@ class Notification(NotificationBase):
     class Config:
         from_attributes = True
 
-# --- Consolidated User Schema ---
-# Now defined last, so it can correctly reference Search, WatchlistItem, and Notification.
 class User(UserBase):
     id: int
     created_at: datetime
@@ -61,8 +52,6 @@ class User(UserBase):
     notifications: list[Notification] = []
     class Config:
         from_attributes = True
-
-# --- Other Schemas (Token, Report, Chat) ---
 
 class Token(BaseModel):
     access_token: str
