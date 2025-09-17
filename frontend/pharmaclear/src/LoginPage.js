@@ -18,7 +18,7 @@ const LoginPage = () => {
     setIsLoading(true);
     setApiError(null);
 
-    // FastAPI's token endpoint expects form data, not JSON
+    
     const formData = new URLSearchParams();
     formData.append("username", data.email);
     formData.append("password", data.password);
@@ -38,8 +38,8 @@ const LoginPage = () => {
       }
 
       const responseData = await response.json();
-      login(responseData.access_token); // Save the token using our context
-      navigate("/dashboard"); // Redirect to the dashboard
+      login(responseData.access_token); 
+      navigate("/dashboard"); /
     } catch (error) {
       setApiError(error.message);
     } finally {

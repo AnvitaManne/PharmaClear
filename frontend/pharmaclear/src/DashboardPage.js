@@ -10,8 +10,6 @@ import {
 import { useAuth } from "./AuthContext";
 import ReportButton from "./ReportButton";
 
-// src/DashboardPage.js
-
 const AlertCard = ({ alert }) => (
   <div className="flex flex-col justify-between p-6 border rounded-lg hover:shadow-md transition-shadow bg-white">
     <div>
@@ -22,8 +20,8 @@ const AlertCard = ({ alert }) => (
             alert.severity === "high"
               ? "bg-red-200 text-red-900"
               : alert.severity === "medium"
-              ? "bg-orange-200 text-orange-900" // Changed to orange for medium
-              : "bg-yellow-100 text-yellow-800" // Changed to yellow for low
+              ? "bg-orange-200 text-orange-900"
+              : "bg-yellow-100 text-yellow-800"
           }`}
         >
           {alert.severity.toUpperCase()}
@@ -45,7 +43,7 @@ const AlertCard = ({ alert }) => (
           </a>
         )}
       </div>
-      {/* --- DISPLAYING DEBUG INFO --- */}
+      {}
       <div className="font-mono">
         <div>Event ID: {alert.event_id || "N/A"}</div>
         <div>Recall #: {alert.recall_number || "N/A"}</div>
@@ -54,7 +52,6 @@ const AlertCard = ({ alert }) => (
   </div>
 );
 
-// The component should start like this, with empty parentheses ()
 const DashboardPage = () => {
   const { token } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");

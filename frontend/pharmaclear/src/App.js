@@ -12,17 +12,15 @@ import SignUpPage from "./SignUpPage";
 import DashboardPage from "./DashboardPage";
 import ProtectedRoute from "./ProtectedRoute";
 import NotificationBell from "./NotificationBell";
-// <-- Import ProtectedRoute
-import { useAuth } from "./AuthContext"; // <-- Import useAuth
+import { useAuth } from "./AuthContext";
 
-// A small component for the Log Out button to handle navigation
 const LogoutButton = () => {
   const { logout } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
     logout();
-    navigate("/"); // Redirect to home page after logout
+    navigate("/");
   };
 
   return (
@@ -36,7 +34,7 @@ const LogoutButton = () => {
 };
 
 function App() {
-  const { token } = useAuth(); // Get the token from our context
+  const { token } = useAuth();
 
   return (
     <Router>
@@ -55,7 +53,6 @@ function App() {
             </Link>
             <div className="flex items-center gap-4">
               {token ? (
-                // Show these links if the user IS logged in
                 <>
                   <Link
                     to="/dashboard"
@@ -67,7 +64,6 @@ function App() {
                   <NotificationBell />
                 </>
               ) : (
-                // Show these links if the user IS NOT logged in
                 <>
                   <Link
                     to="/login"
@@ -92,7 +88,7 @@ function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignUpPage />} />
-            {/* Wrap the DashboardPage with our ProtectedRoute component */}
+            {}
             <Route
               path="/dashboard"
               element={

@@ -11,7 +11,6 @@ const ReportButton = ({ searchQuery, alerts }) => {
 
     setGenerating(true);
     try {
-      // Format the alerts to match the Pydantic schema
       const formattedAlerts = alerts.map((a) => ({
         date: a.date,
         severity: a.severity,
@@ -32,7 +31,6 @@ const ReportButton = ({ searchQuery, alerts }) => {
 
       if (!response.ok) throw new Error("Failed to generate report");
 
-      // Handle the file download
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");

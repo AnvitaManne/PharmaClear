@@ -28,22 +28,22 @@ const NotificationBell = () => {
     };
 
     fetchNotifications();
-    // Optional: Poll for new notifications every 60 seconds
+
     const intervalId = setInterval(fetchNotifications, 60000);
 
-    return () => clearInterval(intervalId); // Cleanup on component unmount
+    return () => clearInterval(intervalId);
   }, [token]);
 
   const handleBellClick = async () => {
     setIsOpen(!isOpen);
-    // If opening the dropdown and there are unread notifications, mark them as read
+
     if (!isOpen && unreadCount > 0) {
       try {
         await fetch("http://localhost:8000/api/notifications/read", {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
         });
-        // Refresh notifications to show them as "read" (optional, for UI change)
+
         const updatedNotifications = notifications.map((n) => ({
           ...n,
           is_read: true,
