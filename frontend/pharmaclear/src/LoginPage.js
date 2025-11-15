@@ -18,7 +18,6 @@ const LoginPage = () => {
     setIsLoading(true);
     setApiError(null);
 
-    
     const formData = new URLSearchParams();
     formData.append("username", data.email);
     formData.append("password", data.password);
@@ -38,8 +37,8 @@ const LoginPage = () => {
       }
 
       const responseData = await response.json();
-      login(responseData.access_token); 
-      navigate("/dashboard"); /
+      login(responseData.access_token);
+      navigate("/dashboard");
     } catch (error) {
       setApiError(error.message);
     } finally {

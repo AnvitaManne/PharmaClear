@@ -1,13 +1,12 @@
-# =========================================
 # Python / Backend
-# =========================================
 __pycache__/
 *.pyc
 .venv/
 
-# =========================================
-# Node.js / Frontend
-# =========================================
+# Node
+frontend/pharmaclear/node_modules/
+frontend/pharmaclear/build/
+.npm
 
 # Logs
 logs
@@ -48,9 +47,11 @@ out/
 .cache/
 .parcel-cache
 
-# =========================================
 # IDE / Editor Config
-# =========================================
 .vscode/
 .idea/
 .DS_Store
+
+# Project Cache
+health_canada_cache.json
+backend/health_canada_cache.json

@@ -10,47 +10,77 @@ import {
 import { useAuth } from "./AuthContext";
 import ReportButton from "./ReportButton";
 
-const AlertCard = ({ alert }) => (
-  <div className="flex flex-col justify-between p-6 border rounded-lg hover:shadow-md transition-shadow bg-white">
-    <div>
-      <div className="flex justify-between items-start mb-2 gap-2">
-        <h2 className="text-xl font-semibold">{alert.title}</h2>
-        <span
-          className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
-            alert.severity === "high"
-              ? "bg-red-200 text-red-900"
-              : alert.severity === "medium"
-              ? "bg-orange-200 text-orange-900"
-              : "bg-yellow-100 text-yellow-800"
-          }`}
-        >
-          {alert.severity.toUpperCase()}
-        </span>
-      </div>
-      <p className="text-gray-600 mb-4">{alert.description}</p>
-    </div>
-    <div className="flex flex-col items-start text-xs text-gray-400 border-t pt-3 mt-4">
-      <div className="flex justify-between w-full mb-2">
-        <span>{alert.date}</span>
-        {alert.source_url && (
-          <a
-            href={alert.source_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-blue-600 hover:underline font-semibold"
+const AlertCard = ({ alert }) => {
+  let formattedDate = alert.date;
+  if (
+    formattedDate &&
+    formattedDate.length === 8 &&
+    !formattedDate.includes("-")
+  ) {
+    formattedDate = `${formattedDate.substring(0, 4)}-${formattedDate.substring(
+      4,
+      6
+    )}-${formattedDate.substring(6, 8)}`;
+  }
+
+  return (
+    <div className="flex flex-col justify-between p-6 border rounded-lg hover:shadow-md transition-shadow bg-white">
+      <div>
+        <div className="flex justify-between items-start mb-2 gap-2">
+          <h2 className="text-xl font-semibold">{alert.title}</h2>
+          <span
+            className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap ${
+              alert.severity === "high"
+                ? "bg-red-200 text-red-900"
+                : alert.severity === "medium"
+                ? "bg-orange-200 text-orange-900"
+                : "bg-yellow-100 text-yellow-800"
+            }`}
           >
-            View Source →
-          </a>
+            {alert.severity.toUpperCase()}
+          </span>
+        </div>
+
+        {/* --- DESCRIPTION BLOCK IS NOW REMOVED --- */}
+      </div>
+      <div
+        className="flex flex-col
+items-start text-xs text-gray-400 border-t pt-3 mt-4"
+      >
+        <div
+          className="flex
+justify-between w-full mb-2"
+        >
+          <span>{formattedDate}</span>
+          {alert.source_url && (
+            <a
+              href={alert.source_url}
+              target="_blank"
+              rel="noopener
+noreferrer"
+              className="text-blue-600
+hover:underline font-semibold"
+            >
+              View Source →
+            </a>
+          )}
+        </div>
+
+        <div className="w-full text-gray-500 font-semibold mb-2">
+          Source: {alert.source}
+        </div>
+
+        {/* Only show this block if the source is FDA */}
+        {alert.source === "FDA" && (
+          <div className="font-mono">
+            <div>Event ID: {alert.event_id || "N/A"}</div>
+            <div>Recall #: {alert.recall_number || "N/A"}</div>
+          </div>
         )}
       </div>
-      {}
-      <div className="font-mono">
-        <div>Event ID: {alert.event_id || "N/A"}</div>
-        <div>Recall #: {alert.recall_number || "N/A"}</div>
-      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const DashboardPage = () => {
   const { token } = useAuth();
@@ -66,6 +96,11 @@ const DashboardPage = () => {
   const [chatInput, setChatInput] = useState("");
   const [isChatLoading, setIsChatLoading] = useState(false);
   const chatContainerRef = useRef(null);
+
+  const [dateFilter, setDateFilter] = useState("all");
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [severityFilter, setSeverityFilter] = useState("all");
+  const [showFilters, setShowFilters] = useState(false); // This controls filter visibility
 
   useEffect(() => {
     if (chatContainerRef.current) {
@@ -109,6 +144,10 @@ const DashboardPage = () => {
   }, [token]);
 
   const handleSearch = async (e, queryOverride) => {
+    // This logic handles all searches:
+    // 1. From <form onSubmit={handleSearch}> (e is the event, queryOverride is undefined)
+    // 2. From "Apply Filters" button (e is the event, queryOverride is undefined)
+    // 3. From "History Click" (e is null, queryOverride is the string)
     if (e) e.preventDefault();
     const query = queryOverride || searchQuery;
     if (!query.trim()) return;
@@ -116,11 +155,15 @@ const DashboardPage = () => {
     setLoading(true);
     setError(null);
     setAlerts([]);
+    setShowFilters(true); // <-- !! SHOWS THE FILTERS ONCE A SEARCH HAPPENS
     setChatMessages([]);
 
     try {
+      // Send all filters to the backend
       const searchResponse = await fetch(
-        `http://localhost:8000/api/search?q=${encodeURIComponent(query)}`,
+        `http://localhost:8000/api/search?q=${encodeURIComponent(
+          query
+        )}&date_filter=${dateFilter}&source_filter=${sourceFilter}&severity_filter=${severityFilter}`,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -133,21 +176,27 @@ const DashboardPage = () => {
       const searchData = await searchResponse.json();
       setAlerts(searchData.results);
 
-      const saveResponse = await fetch("http://localhost:8000/api/searches/", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ query_text: query }),
-      });
+      // Only save to history if it's a new search term (not just an "Apply Filter" click)
+      if (queryOverride || !searchHistory.some((s) => s.query_text === query)) {
+        const saveResponse = await fetch(
+          "http://localhost:8000/api/searches/",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ query_text: query }),
+          }
+        );
 
-      if (saveResponse.ok) {
-        const newSearch = await saveResponse.json();
-        setSearchHistory((prev) => [
-          newSearch,
-          ...prev.filter((s) => s.id !== newSearch.id),
-        ]);
+        if (saveResponse.ok) {
+          const newSearch = await saveResponse.json();
+          setSearchHistory((prev) => [
+            newSearch,
+            ...prev.filter((s) => s.id !== newSearch.id),
+          ]);
+        }
       }
     } catch (err) {
       setError(err.message);
@@ -166,10 +215,11 @@ const DashboardPage = () => {
     setChatInput("");
 
     try {
+      // Create context *without* description, as it's not available
       const contextAlerts = alerts.map((a) => ({
         date: a.date,
         severity: a.severity,
-        description: a.description,
+        description: a.title, // Use title as a fallback context
       }));
       const response = await fetch("http://localhost:8000/api/chat", {
         method: "POST",
@@ -202,8 +252,8 @@ const DashboardPage = () => {
   };
 
   const handleHistoryClick = (query) => {
-    setSearchQuery(query);
-    handleSearch(null, query);
+    setSearchQuery(query); // Update search bar text
+    handleSearch(null, query); // Run search with the clicked query
   };
 
   const handleAddToWatchlist = async () => {
@@ -251,6 +301,7 @@ const DashboardPage = () => {
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-4 gap-8">
+      {/* --- Main Content Area (span-3) --- */}
       <div className="lg:col-span-3">
         <h2 className="text-3xl font-bold mb-6">Compliance Search</h2>
         <form onSubmit={handleSearch} className="mb-6">
@@ -353,7 +404,87 @@ const DashboardPage = () => {
         )}
       </div>
 
+      {/* --- Sidebar Area (span-1) --- */}
       <aside className="lg:col-span-1 space-y-8">
+        {/* --- !! THIS BLOCK IS NOW CONDITIONAL !! --- */}
+        {showFilters && (
+          <div className="bg-gray-50 p-6 rounded-lg">
+            <h3 className="text-xl font-bold mb-4">Filters</h3>
+            <div className="space-y-4">
+              {/* Date Filter */}
+              <div>
+                <label
+                  htmlFor="date-filter"
+                  className="block text-sm font-medium text-gray-700"
+                >
+                  Date Range
+                </label>
+                <select
+                  id="date-filter"
+                  name="date-filter"
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                >
+                  <option value="all">All Time</option>
+                  <option value="1y">Last Year</option>
+                  <option value="3y">Last 3 Years</option>
+                  <option value="5y">Last 5 Years</option>
+                </select>
+              </div>
+              {/* Source Filter */}
+              <div>
+                <label
+                  htmlFor="source-filter"
+                  className="block text-sm font-medium text-gray-700"
+                >
+                  Source
+                </label>
+                <select
+                  id="source-filter"
+                  name="source-filter"
+                  value={sourceFilter}
+                  onChange={(e) => setSourceFilter(e.target.value)}
+                  className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                >
+                  <option value="all">All Sources</option>
+                  <option value="FDA">FDA</option>
+                  <option value="Health Canada">Health Canada</option>
+                </select>
+              </div>
+              {/* Severity Filter */}
+              <div>
+                <label
+                  htmlFor="severity-filter"
+                  className="block text-sm font-medium text-gray-700"
+                >
+                  Severity
+                </label>
+                <select
+                  id="severity-filter"
+                  name="severity-filter"
+                  value={severityFilter}
+                  onChange={(e) => setSeverityFilter(e.target.value)}
+                  className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md"
+                >
+                  <option value="all">All Severities</option>
+                  <option value="high">High</option>
+                  <option value="medium">Medium</option>
+                  <option value="low">Low</option>
+                </select>
+              </div>
+            </div>
+            <button
+              onClick={handleSearch} // Re-run search with current filters
+              className="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-colors"
+            >
+              Apply Filters
+            </button>
+          </div>
+        )}
+        {/* --- !! END OF CONDITIONAL BLOCK !! --- */}
+
+        {/* These two blocks are now ALWAYS visible */}
         <div className="bg-gray-50 p-6 rounded-lg">
           <h3 className="text-xl font-bold mb-4 flex items-center">
             <History className="mr-2 h-5 w-5" />
@@ -394,7 +525,12 @@ const DashboardPage = () => {
                   key={item.id}
                   className="flex justify-between items-center text-sm"
                 >
-                  <span>{item.query_text}</span>
+                  <button
+                    onClick={() => handleHistoryClick(item.query_text)}
+                    className="text-blue-600 hover:underline text-left"
+                  >
+                    {item.query_text}
+                  </button>
                   <button
                     onClick={() => handleDeleteWatchlistItem(item.id)}
                     title="Remove"
