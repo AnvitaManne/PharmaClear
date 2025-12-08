@@ -4,6 +4,8 @@ from typing import List, Optional
 import asyncio 
 import json
 from pathlib import Path
+import numpy as np
+from typing import List, Tuple
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Depends, status
@@ -458,6 +460,68 @@ def generate_report(
         headers={'Content-Disposition': f'attachment; filename="{query}-report.pdf"'}
     )
 
+# --- RAG HELPER FUNCTIONS ---
+
+def get_embedding(text: str) -> List[float]:
+    """Generates vector embedding using Google Gemini."""
+    try:
+        # We use the embedding-001 model specifically for this
+        result = genai.embed_content(
+            model="models/embedding-001",
+            content=text,
+            task_type="retrieval_query"
+        )
+        return result['embedding']
+    except Exception as e:
+        print(f"Embedding error: {e}")
+        return []
+
+def cosine_similarity(v1: List[float], v2: List[float]) -> float:
+    """Calculates how similar two vectors are (Cosine Similarity)."""
+    if not v1 or not v2:
+        return 0.0
+    vec1 = np.array(v1)
+    vec2 = np.array(v2)
+    # The dot product of two normalized vectors gives the cosine similarity
+    return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
+
+def semantic_rerank(query: str, alerts: List[schemas.AlertItem], top_k: int = 5) -> List[schemas.AlertItem]:
+    """
+    RAG CORE: Embeds the query and all alerts on-the-fly, 
+    then returns only the most semantically relevant ones.
+    """
+    print(f"--- [RAG] Starting Semantic Reranking for query: '{query}' ---")
+    
+    # 1. Embed the User's Question
+    query_embedding = get_embedding(query)
+    if not query_embedding:
+        return alerts[:top_k] # Fallback if API fails
+
+    scored_alerts = []
+
+    # 2. Embed each Alert (Title + Description) to find meaning
+    for alert in alerts:
+        # Combine title and description for a rich vector
+        content_to_embed = f"{alert.title} {alert.description or ''}"
+        
+        # Get vector for this specific alert
+        alert_embedding = get_embedding(content_to_embed)
+        
+        # 3. Calculate Similarity Score
+        if alert_embedding:
+            score = cosine_similarity(query_embedding, alert_embedding)
+            scored_alerts.append((score, alert))
+
+    # 4. Sort by Score (Highest Similarity first)
+    scored_alerts.sort(key=lambda x: x[0], reverse=True)
+
+    # Debug print to show it's working
+    if scored_alerts:
+        print(f"--- [RAG] Top Match Score: {scored_alerts[0][0]} ---")
+    
+    # Return just the alert objects
+    return [item[1] for item in scored_alerts[:top_k]]
+
 
 @app.post("/api/chat", response_model=schemas.ChatResponse)
 def chat_with_results(
@@ -465,22 +529,28 @@ def chat_with_results(
     current_user: models.User = Depends(auth.get_current_user)
 ):
     """
-    Answers a user's question based on the context of their search results (RAG).
+    Answers a user's question using Vector-Based RAG.
     """
     question = chat_request.question
     alerts = chat_request.context_alerts
 
-    # !! Use Title as context, since description is hidden/empty !!
+    # --- RAG INTEGRATION START ---
+    # Instead of blindly dumping all alerts, we use semantic search to filter them.
+    # This is the "Retrieval" in RAG.
+    relevant_alerts = semantic_rerank(question, alerts, top_k=5)
+    # --- RAG INTEGRATION END ---
+
+    # Construct Context from the Top K Relevant results ("Augmentation")
     context = "\n\n".join([
-        f"Document Title: {a.title}\nContent: {a.title}"
-        for a in alerts
+        f"Document Title: {a.title}\nSeverity: {a.severity}\nDate: {a.date}\nContent: {a.description or 'No description provided'}"
+        for a in relevant_alerts
     ])
 
     prompt = f"""
-    You are a helpful pharmaceutical compliance assistant.
-    Based ONLY on the context documents provided below, answer the user's question.
-    The context for each document is its Title.
-    If the answer is not found in the context, say "I cannot answer that based on the provided results."
+    You are a pharmaceutical compliance assistant. 
+    Answer the user's question using ONLY the provided context below.
+    
+    The context has been selected via semantic vector search as the most relevant to this specific question.
 
     CONTEXT DOCUMENTS:
     ---
@@ -494,12 +564,10 @@ def chat_with_results(
     """
 
     try:
+        # "Generation" using Groq
         chat_completion = groq_client.chat.completions.create(
             messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
+                {"role": "user", "content": prompt}
             ],
             model="llama-3.1-8b-instant",
         )

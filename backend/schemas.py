@@ -61,9 +61,12 @@ class TokenData(BaseModel):
     email: Optional[str] = None
 
 class AlertItem(BaseModel):
+    title: Optional[str] = "No Title"  # <--- Fixes 422 Error (Makes it optional)
     date: str
     severity: str
-    description: str
+    description: Optional[str] = ""    # <--- Fixes potential crashes
+    source: Optional[str] = None
+    source_url: Optional[str] = None
 
 class ReportRequest(BaseModel):
     query: str
